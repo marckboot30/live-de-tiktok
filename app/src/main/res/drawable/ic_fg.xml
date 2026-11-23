@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cabeça de zumbi verde com olhos vermelhos -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#8FAE6A"
+        android:strokeColor="#0D120C"
+        android:strokeWidth="2.5"
+        android:pathData="M54,30c13,0 22,9 22,21c0,8 -3,13 -7,17v9h-30v-9c-4,-4 -7,-9 -7,-17c0,-12 9,-21 22,-21z" />
+    <path
+        android:fillColor="#FF3B2A"
+        android:pathData="M42,48h8v6h-8zM58,48h8v6h-8z" />
+    <path
+        android:fillColor="#0D120C"
+        android:pathData="M45,66h3v8h-3zM51,66h3v8h-3zM57,66h3v8h-3zM63,66h3v6h-3z" />
+</vector>

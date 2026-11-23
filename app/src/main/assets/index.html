@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Horda ao Vivo</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #0b0f0c; color: #e9e4d4; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  #app { display: flex; flex-direction: column; height: 100vh; max-width: 560px; margin: 0 auto; }
+  @supports (height: 100dvh) { #app { height: 100dvh; } }
+  #stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: manipulation; border-radius: 10px; }
+  #panel { padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); background: #121813; border-top: 2px solid #233026; }
+  #panel.hidden { display: none; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .pill { flex: 1; min-width: 0; height: 36px; border-radius: 18px; display: flex; align-items: center; padding: 0 12px; font-size: 14px; font-weight: 700; background: #1d2620; color: #cfd8c8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pill.on { background: #1f4a2a; color: #b9f5c4; }
+  .pill.err { background: #4a1f1f; color: #ffc9c0; }
+  .small { height: 36px; min-width: 44px; padding: 0 10px; border-radius: 10px; border: 2px solid #2c3b2f; background: #1a231c; color: #e9e4d4; font-size: 14px; font-weight: 700; }
+  #liveBtn { border-color: #c2652a; color: #ffd2a8; }
+  #name { flex: 1; min-width: 0; height: 44px; border-radius: 10px; border: 2px solid #2c3b2f; background: #0b100c; color: #f2ecd9; font-size: 16px; padding: 0 12px; outline: none; }
+  #name:focus { border-color: #d98b2b; }
+  .act { height: 44px; padding: 0 12px; border-radius: 10px; border: none; font-size: 15px; font-weight: 800; color: #fff; }
+  .act:active, .chip:active { transform: scale(.95); filter: brightness(1.2); }
+  .join { background: linear-gradient(#3f7f4a, #285a31); }
+  .gift { background: linear-gradient(#c2652a, #8f4318); }
+  .hint { font-size: 14px; color: #8fa28f; margin: 6px 2px; }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 92px; overflow-y: auto; }
+  .chip { height: 40px; padding: 0 14px; border-radius: 20px; border: 2px solid #39503d; background: #182219; color: #e3f2dc; font-size: 15px; font-weight: 700; }
+  .chip.sel { border-color: #d98b2b; }
+  #showBtn { position: fixed; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); opacity: .35; display: none; z-index: 5; }
+  #showBtn.vis { display: block; }
+  /* tela de ligar na live */
+  #setup { position: fixed; inset: 0; background: rgba(5,8,6,.94); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 16px; overflow-y: auto; }
+  #setup.hidden { display: none; }
+  #setup .box { width: 100%; max-width: 420px; background: #121813; border: 2px solid #2c3b2f; border-radius: 16px; padding: 18px; }
+  #setup h2 { margin: 0 0 4px; font-size: 22px; color: #9fd35a; }
+  #setup p { margin: 0 0 12px; font-size: 14px; color: #b8c4b0; line-height: 1.4; }
+  #setup label { display: block; font-size: 14px; font-weight: 700; color: #e9e4d4; margin: 12px 0 6px; }
+  #setup input { width: 100%; height: 46px; border-radius: 10px; border: 2px solid #2c3b2f; background: #0b100c; color: #f2ecd9; font-size: 16px; padding: 0 12px; outline: none; }
+  #setup input:focus { border-color: #d98b2b; }
+  #setup .help { font-size: 13px; color: #8fa28f; margin-top: 8px; line-height: 1.45; }
+  #setup a { color: #ffc07a; font-weight: 700; }
+  #setup .row { margin-top: 16px; }
+  #setup .row .act { flex: 1; }
+  #setup .close { width: 100%; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"><canvas id="c"></canvas></div>
+  <div id="panel">
+    <div class="row">
+      <span id="status" class="pill">Modo manual</span>
+      <button class="small" id="liveBtn">Live</button>
+      <button class="small" id="pauseBtn">II</button>
+      <button class="small" id="muteBtn">Som</button>
+      <button class="small" id="hideBtn">Ocultar</button>
+    </div>
+    <div id="manual">
+      <div class="row" style="margin-top:6px">
+        <input id="name" placeholder="@ de quem entrou" maxlength="24" autocomplete="off" autocapitalize="off">
+        <button class="act join" id="joinBtn">Entrou</button>
+        <button class="act gift" id="giftBtn">Presente</button>
+      </div>
+      <div class="hint" id="hint">Toque em Live para ligar o jogo na sua live. Sem isso, toque no nome da pessoa sempre que ela comentar.</div>
+      <div id="chips"></div>
+    </div>
+  </div>
+</div>
+<button class="small" id="showBtn">Painel</button>
+<div id="setup" class="hidden">
+  <div class="box">
+    <h2>Ligar na live</h2>
+    <p>O jogo lê sozinho quem entra, comenta e manda presente na sua live do TikTok.</p>
+    <label for="cfgUser">@ da conta que vai fazer a live</label>
+    <input id="cfgUser" placeholder="seucanal" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <label for="cfgKey">Chave da Euler Stream</label>
+    <input id="cfgKey" placeholder="cole a chave aqui" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="help">É grátis e só precisa fazer uma vez: entre em <a href="https://www.eulerstream.com" target="_blank">eulerstream.com</a>, crie uma conta, copie a <b>API Key</b> do painel e cole aqui. É ela que deixa o jogo ler a live.</div>
+    <div class="row">
+      <button class="act join" id="cfgSave">Conectar</button>
+      <button class="act gift" id="cfgTest">Testar sem live</button>
+    </div>
+    <button class="small close" id="cfgClose">Fechar (usar no modo manual)</button>
+  </div>
+</div>
+<script>
+"use strict";
+// ================= CONFIG =================
+const CONFIG = {
+  baseHp:        { value: 200, min: 50, max: 1000, step: 10 },
+  barricadeR:    { value: 84, min: 60, max: 120, step: 2 },
+  maxOnField:    { value: 16, min: 4, max: 16, step: 1 },
+  shotCooldown:  { value: 0.12, min: 0.03, max: 1, step: 0.01 },   // intervalo entre tiros da mesma pessoa
+  maxPending:    { value: 5, min: 1, max: 20, step: 1 },           // tiros acumulados por pessoa
+  turretEvery:   { value: 1.3, min: 0.3, max: 5, step: 0.1 },      // torre automática da base
+  turretRange:   { value: 230, min: 100, max: 400, step: 10 },
+  bulletSpeed:   { value: 560, min: 200, max: 1000, step: 20 },
+  waveLength:    { value: 35, min: 15, max: 120, step: 5 },
+  calmTime:      { value: 4, min: 0, max: 15, step: 1 },
+  spawnStart:    { value: 1.6, min: 0.3, max: 5, step: 0.1 },
+  spawnFactor:   { value: 0.88, min: 0.6, max: 1, step: 0.01 },
+  spawnMin:      { value: 0.32, min: 0.1, max: 2, step: 0.02 },
+  bossEvery:     { value: 3, min: 1, max: 10, step: 1 },
+  bombRadius:    { value: 78, min: 30, max: 200, step: 2 },
+  bombDamage:    { value: 4, min: 1, max: 30, step: 1 },
+  maxBombsGift:  { value: 10, min: 1, max: 50, step: 1 },
+  bombEvery:     { value: 0.3, min: 0.05, max: 2, step: 0.05 },
+};
+const C = k => CONFIG[k].value;
+// vida em "tiros": comum e corredor morrem com 1 comentário
+const ZTYPES = {
+  comum:    { name: "Comum",    hp: 1, speed: 22, dps: 4,  r: 9 },
+  corredor: { name: "Corredor", hp: 1, speed: 48, dps: 3,  r: 7 },
+  gordao:   { name: "Gordão",   hp: 3, speed: 13, dps: 9,  r: 14 },
+  chefao:   { name: "Chefão",   hp: 12, speed: 15, dps: 18, r: 22 },
+};
+const JACKETS = ["#b5672b", "#3f7fb5", "#9b4fc0", "#3fa86a", "#c0434f", "#c2a23a", "#36b0aa", "#d9739a", "#7f8a96", "#e08a3a"];
+
+// ================= SETUP =================
+const W = 360, H = 560, CX = 180, CY = 300;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const params = new URLSearchParams(location.search);
+let DPR = 1, scaleCss = 1;
+function resize() {
+  const st = document.getElementById("stage");
+  const aw = st.clientWidth - 8, ah = st.clientHeight - 8;
+  scaleCss = Math.max(0.3, Math.min(aw / W, ah / H));
+  DPR = Math.min(3, window.devicePixelRatio || 1);
+  cv.style.width = (W * scaleCss) + "px"; cv.style.height = (H * scaleCss) + "px";
+  cv.width = Math.round(W * scaleCss * DPR); cv.height = Math.round(H * scaleCss * DPR);
+}
+window.addEventListener("resize", resize);
+let seed = 12345;
+function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+const rr = (a, b) => a + rnd() * (b - a);
+function hashStr(s) { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
+
+// posições dos sobreviventes dentro da barricada
+const SLOTS = [];
+for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2 - Math.PI / 2 + .3; SLOTS.push([CX + Math.cos(a) * 30, CY + Math.sin(a) * 30]); }
+for (let i = 0; i < 11; i++) { const a = i / 11 * Math.PI * 2 - Math.PI / 2; SLOTS.push([CX + Math.cos(a) * 60, CY + Math.sin(a) * 60]); }
+
+// chão pré-renderizado
+const ground = document.createElement("canvas");
+function rrect(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function drawCar(g, x, y, a, col) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  g.fillStyle = "rgba(0,0,0,.35)"; g.fillRect(-27, -11, 58, 26);
+  g.fillStyle = col; rrect(g, -28, -13, 56, 26, 6); g.fill();
+  g.fillStyle = "#1c2328"; rrect(g, -8, -10, 22, 20, 3); g.fill();
+  g.fillStyle = "#8aa0a8"; g.fillRect(12, -9, 4, 18);
+  g.restore();
+}
+function buildGround() {
+  ground.width = W * 2; ground.height = H * 2;
+  const g = ground.getContext("2d"); g.scale(2, 2);
+  g.fillStyle = "#1a2219"; g.fillRect(0, 0, W, H);
+  g.fillStyle = "#23272a"; g.fillRect(0, CY - 34, W, 68);
+  g.strokeStyle = "#565a3c"; g.lineWidth = 2; g.setLineDash([14, 12]);
+  g.beginPath(); g.moveTo(0, CY); g.lineTo(W, CY); g.stroke(); g.setLineDash([]);
+  let s = 77; const r2 = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  for (let i = 0; i < 520; i++) {
+    const x = r2() * W, y = r2() * H; if (Math.abs(y - CY) < 36) continue;
+    g.strokeStyle = r2() < .5 ? "#2a3a25" : "#202d1d"; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + r2() * 3 - 1.5, y - 3 - r2() * 3); g.stroke();
+  }
+  for (let i = 0; i < 26; i++) { const x = r2() * W, y = r2() * H; g.fillStyle = "rgba(10,14,10,.35)"; g.beginPath(); g.ellipse(x, y, 8 + r2() * 18, 5 + r2() * 10, r2() * 3, 0, 7); g.fill(); }
+  drawCar(g, 36, CY - 14, 0.1, "#5a2e24"); drawCar(g, 324, CY + 16, 3.0, "#2d4253");
+  for (const [x, y] of [[70, CY - 60], [290, CY + 60]]) {
+    const gr = g.createRadialGradient(x, y, 2, x, y, 70);
+    gr.addColorStop(0, "rgba(255,190,90,.2)"); gr.addColorStop(1, "rgba(255,190,90,0)");
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, 70, 0, 7); g.fill();
+    g.fillStyle = "#3a3a32"; g.fillRect(x - 3, y - 3, 6, 6);
+  }
+  g.fillStyle = "rgba(60,50,35,.5)"; g.beginPath(); g.arc(CX, CY, C("barricadeR") - 6, 0, 7); g.fill(); // chão de terra da base
+  const v = g.createRadialGradient(CX, CY, 120, CX, CY, 380);
+  v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,.65)");
+  g.fillStyle = v; g.fillRect(0, 0, W, H);
+}
+
+// ================= ÁUDIO =================
+let actx = null, muted = false;
+try { muted = localStorage.getItem("hordaAoVivo.mudo") === "1"; } catch (e) {}
+function ensureAudio() { if (actx) return; try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; } }
+let lastShotSnd = 0;
+function tone(freq, dur, type, vol, slide) {
+  if (muted || !actx) return;
+  const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+  o.type = type || "square"; o.frequency.setValueAtTime(freq, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
+  g.gain.setValueAtTime(vol || .05, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur);
+}
+function noise(dur, vol) {
+  if (muted || !actx) return;
+  const n = Math.floor(actx.sampleRate * dur), b = actx.createBuffer(1, n, actx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
+  const s = actx.createBufferSource(), g = actx.createGain(); s.buffer = b; g.gain.value = vol;
+  s.connect(g).connect(actx.destination); s.start();
+}
+const sfx = {
+  shot() { const t = performance.now(); if (t - lastShotSnd < 70) return; lastShotSnd = t; tone(760, .05, "square", .03, 220); },
+  boom() { noise(.5, .3); tone(90, .45, "sine", .22, 30); },
+  join() { tone(520, .08, "triangle", .05, 780); },
+  gift() { tone(660, .1, "triangle", .08, 990); setTimeout(() => tone(990, .14, "triangle", .08, 1320), 90); },
+  boss() { tone(70, .9, "sawtooth", .12, 40); noise(.3, .1); },
+  wave() { tone(220, .3, "sawtooth", .06, 110); },
+  over() { tone(300, .9, "triangle", .12, 60); },
+};
+
+// ================= PESSOAS =================
+// people: todo mundo que apareceu (placar). field: quem está na base (máx 16).
+const people = new Map();
+let field = [];
+function keyOf(u) { return String(u || "").trim().replace(/^@/, "").toLowerCase(); }
+function getPerson(user, nick) {
+  const key = keyOf(user); if (!key) return null;
+  let p = people.get(key);
+  if (!p) {
+    const name = String(nick || user).trim().replace(/^@/, "").slice(0, 20) || key;
+    p = { key, name, color: JACKETS[hashStr(key) % JACKETS.length], kills: 0, bombs: 0, comments: 0, slot: -1, aim: rnd() * 6.28, pending: 0, cd: 0, bombQ: 0, bombCd: 0, active: 0, bubble: null, muzzle: 0, joinT: 0 };
+    people.set(key, p);
+  } else if (nick && nick !== p.name) p.name = String(nick).slice(0, 20);
+  return p;
+}
+function putOnField(p) {
+  if (p.slot >= 0) return;
+  const max = C("maxOnField");
+  const used = new Set(field.map(f => f.slot));
+  let slot = -1;
+  for (let i = 0; i < max; i++) if (!used.has(i)) { slot = i; break; }
+  if (slot < 0) { // revezamento: sai quem está parado há mais tempo
+    field.sort((a, b) => a.active - b.active);
+    const out = field.shift(); slot = out.slot; out.slot = -1;
+  }
+  p.slot = slot; p.joinT = 1.2; p.active = nowT; field.push(p);
+  renderChips();
+}
+let nowT = 0;
+
+// ================= EVENTOS DA LIVE =================
+const feed = []; // linhas pequenas no canto
+function pushFeed(txt, col) { feed.push({ txt, col, t: 4 }); if (feed.length > 4) feed.shift(); }
+function onJoin(user, nick) {
+  const p = getPerson(user, nick); if (!p) return;
+  const was = p.slot >= 0; putOnField(p); p.active = nowT;
+  if (!was) { pushFeed("@" + p.name + " entrou na base", "#bfe8b0"); sfx.join(); }
+}
+function onChat(user, nick, text) {
+  const p = getPerson(user, nick); if (!p) return;
+  putOnField(p); p.active = nowT; p.comments++;
+  if (text) p.bubble = { text: String(text).slice(0, 22), t: 2.2 };
+  if (scene === "play") p.pending = Math.min(C("maxPending"), p.pending + 1);
+}
+function onGift(user, nick, giftName, count) {
+  const p = getPerson(user, nick); if (!p) return;
+  putOnField(p); p.active = nowT;
+  const n = Math.max(1, Math.min(C("maxBombsGift"), Math.floor(+count || 1)));
+  if (scene === "play") { p.bombQ += n; p.bombs += n; }
+  state.banners.push({ txt: "@" + p.name, sub: "mandou " + (giftName || "presente") + (n > 1 ? " x" + n : "") + "  =  " + n + (n > 1 ? " BOMBAS" : " BOMBA"), t: 2.6 });
+  if (state.banners.length > 3) state.banners.splice(0, state.banners.length - 3);
+  sfx.gift();
+}
+function handleEvent(ev) {
+  if (!ev || !ev.type) return;
+  if (ev.type === "join") onJoin(ev.user, ev.nick);
+  else if (ev.type === "chat") onChat(ev.user, ev.nick, ev.text);
+  else if (ev.type === "gift") onGift(ev.user, ev.nick, ev.gift, ev.count);
+  else if (ev.type === "status") setStatus(ev);
+}
+
+// ================= ESTADO DO JOGO =================
+let state, record = 0;
+try { record = +localStorage.getItem("hordaAoVivo.recorde2") || 0; } catch (e) {}
+function newState() {
+  return { t: 0, hp: C("baseHp"), wave: 1, waveT: -C("calmTime"), spawnT: 0, turretT: 0, turretAim: -1.57, turretMuzzle: 0,
+    zombies: [], bullets: [], bombs: [], parts: [], rings: [], corpses: [], floats: [], banners: [],
+    kills: 0, flash: 0, shake: 0, newRecord: false };
+}
+let scene = params.get("scene") === "figures" ? "figures" : "title";
+state = newState();
+function startGame() {
+  ensureAudio(); state = newState(); scene = "play";
+  for (const p of people.values()) { p.kills = 0; p.bombs = 0; p.pending = 0; p.bombQ = 0; }
+  state.banners.push({ txt: "ONDA 1", sub: "comente pra atirar · presente = bomba", t: 2.4, wave: true });
+}
+function spawnZombie(type, ang, dist) {
+  const T = ZTYPES[type];
+  if (ang === undefined) ang = rnd() * Math.PI * 2;
+  dist = dist || 340;
+  const hp = type === "chefao" ? T.hp + state.wave * 2 : T.hp;
+  state.zombies.push({ type, x: CX + Math.cos(ang) * dist, y: CY + Math.sin(ang) * dist, hp, maxHp: hp, incoming: 0,
+    speed: T.speed * rr(.9, 1.1), r: T.r, phase: rnd() * 6, hit: 0, lastBy: null });
+}
+function waveType() {
+  const w = state.wave, r = rnd();
+  if (w >= 3 && r < .12 + w * .01) return "gordao";
+  if (w >= 2 && r < .4) return "corredor";
+  return "comum";
+}
+function spawnInterval() { return Math.max(C("spawnMin"), C("spawnStart") * Math.pow(C("spawnFactor"), state.wave - 1)); }
+
+function nearestTarget(x, y, maxD) {
+  let best = null, bd = maxD || 1e9;
+  for (const z of state.zombies) {
+    if (z.hp - z.incoming <= 0) continue;
+    const d = Math.hypot(z.x - x, z.y - y);
+    if (d < bd && z.x > -20 && z.x < W + 20 && z.y > -20 && z.y < H + 20) { bd = d; best = z; }
+  }
+  return best;
+}
+function fire(fromX, fromY, z, owner) {
+  z.incoming++;
+  state.bullets.push({ x: fromX, y: fromY, tx: z.x, ty: z.y, z, owner, t: 1.5 });
+  sfx.shot();
+}
+function densestPoint() {
+  let best = null, bc = -1;
+  for (const z of state.zombies) {
+    let c = 0; for (const o of state.zombies) if (Math.hypot(o.x - z.x, o.y - z.y) < 60) c++;
+    const d = Math.hypot(z.x - CX, z.y - CY); c += (300 - d) / 300; // prefere os mais perto
+    if (c > bc && z.x > 0 && z.x < W && z.y > 0 && z.y < H) { bc = c; best = z; }
+  }
+  if (best) return [best.x, best.y];
+  const a = rnd() * 6.28; return [CX + Math.cos(a) * 150, CY + Math.sin(a) * 150];
+}
+function damage(z, n, owner) { z.hp -= n; z.hit = .12; if (owner) z.lastBy = owner; }
+
+// ================= LÓGICA (passo fixo) =================
+const DT = 1 / 60;
+function update(dt) {
+  const s = state; nowT += dt;
+  for (const b of s.banners) b.t -= dt; s.banners = s.banners.filter(b => b.t > 0);
+  for (const f of feed) f.t -= dt; while (feed.length && feed[0].t <= 0) feed.shift();
+  for (const p of field) { if (p.bubble) { p.bubble.t -= dt; if (p.bubble.t <= 0) p.bubble = null; } if (p.joinT > 0) p.joinT -= dt; if (p.muzzle > 0) p.muzzle -= dt; }
+  if (scene !== "play") return;
+  s.t += dt;
+  // ondas
+  s.waveT += dt;
+  if (s.waveT >= C("waveLength")) {
+    s.wave++; s.waveT = -C("calmTime");
+    s.banners.push({ txt: "ONDA " + s.wave, sub: s.wave % C("bossEvery") === 0 ? "um CHEFÃO está vindo" : "eles estão vindo mais rápido", t: 2.4, wave: true });
+    sfx.wave();
+  }
+  if (s.waveT >= 0) {
+    if (s.waveT - dt < 0 && s.wave % C("bossEvery") === 0) { spawnZombie("chefao", undefined, 360); sfx.boss(); s.shake = .4; }
+    s.spawnT -= dt;
+    if (s.spawnT <= 0) { s.spawnT = spawnInterval() * rr(.7, 1.3); spawnZombie(waveType()); }
+  }
+  // tiros de quem comentou
+  for (const p of field) {
+    const [px, py] = SLOTS[p.slot];
+    if (p.cd > 0) p.cd -= dt;
+    if (p.pending > 0 && p.cd <= 0) {
+      p.pending--; p.cd = C("shotCooldown");
+      const z = nearestTarget(px, py);
+      if (z) { p.aim = Math.atan2(z.y - py, z.x - px); fire(px + Math.cos(p.aim) * 12, py + Math.sin(p.aim) * 12, z, p); p.muzzle = .07; }
+    }
+    if (p.bombCd > 0) p.bombCd -= dt;
+    if (p.bombQ > 0 && p.bombCd <= 0) {
+      p.bombQ--; p.bombCd = C("bombEvery");
+      const [tx, ty] = densestPoint();
+      p.aim = Math.atan2(ty - py, tx - px);
+      s.bombs.push({ x0: px, y0: py, x1: tx + rr(-12, 12), y1: ty + rr(-12, 12), t: 0, dur: .55, owner: p });
+    }
+  }
+  // torre automática da base
+  s.turretT -= dt; if (s.turretMuzzle > 0) s.turretMuzzle -= dt;
+  if (s.turretT <= 0) {
+    const z = nearestTarget(CX, CY, C("turretRange"));
+    if (z) { s.turretT = C("turretEvery"); s.turretAim = Math.atan2(z.y - CY, z.x - CX); fire(CX + Math.cos(s.turretAim) * 14, CY + Math.sin(s.turretAim) * 14, z, null); s.turretMuzzle = .07; }
+  }
+  // balas teleguiadas
+  const v = C("bulletSpeed");
+  for (const b of s.bullets) {
+    if (b.z && b.z.hp > 0) { b.tx = b.z.x; b.ty = b.z.y; }
+    const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy);
+    b.px = b.x; b.py = b.y;
+    if (d < v * dt + (b.z ? b.z.r : 2)) {
+      if (b.z && b.z.hp > 0) {
+        damage(b.z, 1, b.owner); b.z.incoming = Math.max(0, b.z.incoming - 1);
+        for (let i = 0; i < 4; i++) s.parts.push({ x: b.tx, y: b.ty, vx: dx / d * 40 + rr(-40, 40), vy: dy / d * 40 + rr(-40, 40), t: rr(.2, .45), col: "#7a1d14", sz: 2.2 });
+      } else if (b.z) b.z.incoming = Math.max(0, b.z.incoming - 1);
+      b.t = 0;
+    } else { b.x += dx / d * v * dt; b.y += dy / d * v * dt; b.t -= dt; }
+  }
+  s.bullets = s.bullets.filter(b => b.t > 0);
+  // bombas em arco
+  for (const bm of s.bombs) {
+    bm.t += dt;
+    if (bm.t >= bm.dur) {
+      bm.done = true;
+      const R = C("bombRadius");
+      for (const z of s.zombies) if (Math.hypot(z.x - bm.x1, z.y - bm.y1) < R + z.r) damage(z, C("bombDamage"), bm.owner);
+      s.rings.push({ x: bm.x1, y: bm.y1, r: 8, max: R, t: .45 });
+      for (let i = 0; i < 26; i++) { const a = rnd() * 7, sp = rr(50, 200); s.parts.push({ x: bm.x1, y: bm.y1, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: rr(.3, .7), col: rnd() < .5 ? "#ffb347" : "#ff6a2b", sz: rr(2, 4) }); }
+      s.flash = Math.max(s.flash, .18); s.shake = Math.max(s.shake, .3); sfx.boom();
+    }
+  }
+  s.bombs = s.bombs.filter(b => !b.done);
+  // zumbis
+  const bR = C("barricadeR");
+  for (const z of s.zombies) {
+    z.phase += dt * (z.speed / 6); if (z.hit > 0) z.hit -= dt;
+    const dx = CX - z.x, dy = CY - z.y, d = Math.hypot(dx, dy);
+    z.ang = Math.atan2(dy, dx);
+    if (d > bR + z.r) { z.x += dx / d * z.speed * dt; z.y += dy / d * z.speed * dt; z.atk = false; }
+    else { z.atk = true; s.hp -= ZTYPES[z.type].dps * dt; }
+  }
+  for (let i = 0; i < s.zombies.length; i++) for (let j = i + 1; j < s.zombies.length; j++) {
+    const a = s.zombies[i], b = s.zombies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), m = (a.r + b.r) * .85;
+    if (d > 0 && d < m) { const p = (m - d) / 2 / d; a.x -= dx * p; a.y -= dy * p; b.x += dx * p; b.y += dy * p; }
+  }
+  for (const z of s.zombies) if (z.hp <= 0) {
+    s.kills++;
+    if (z.lastBy) { z.lastBy.kills++; if (z.type === "chefao") s.floats.push({ x: z.x, y: z.y - 26, txt: "@" + z.lastBy.name + " derrubou o CHEFÃO", col: "#ffe08a", t: 2.2 }); }
+    else if (z.type === "chefao") s.floats.push({ x: z.x, y: z.y - 26, txt: "CHEFÃO CAIU!", col: "#ffe08a", t: 2 });
+    s.corpses.push({ x: z.x, y: z.y, r: z.r, t: 6 });
+    for (let i = 0; i < (z.type === "chefao" ? 30 : 8); i++) { const a = rnd() * 7, sp = rr(20, 90); s.parts.push({ x: z.x, y: z.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: rr(.3, .7), col: rnd() < .6 ? "#5d1810" : "#4b5e2a", sz: rr(2, 3.5) }); }
+  }
+  s.zombies = s.zombies.filter(z => z.hp > 0);
+  for (const p of s.parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .94; p.vy *= .94; p.t -= dt; }
+  s.parts = s.parts.filter(p => p.t > 0); if (s.parts.length > 500) s.parts.splice(0, s.parts.length - 500);
+  for (const f of s.floats) { f.t -= dt; f.y -= dt * 16; } s.floats = s.floats.filter(f => f.t > 0);
+  for (const r of s.rings) { r.t -= dt; r.r += (r.max - r.r) * Math.min(1, dt * 12); } s.rings = s.rings.filter(r => r.t > 0);
+  for (const c of s.corpses) c.t -= dt; s.corpses = s.corpses.filter(c => c.t > 0); if (s.corpses.length > 80) s.corpses.shift();
+  if (s.flash > 0) s.flash -= dt; if (s.shake > 0) s.shake -= dt;
+  if (s.hp <= 0) {
+    s.hp = 0; scene = "over"; sfx.over();
+    if (s.t > record) { record = s.t; s.newRecord = true; try { localStorage.setItem("hordaAoVivo.recorde2", String(record)); } catch (e) {} }
+  }
+}
+
+// ================= DESENHO =================
+function drawZombie(g, z, t) {
+  const T = z.type, wob = Math.sin(z.phase) * (T === "gordao" ? 1.2 : 2);
+  g.save(); g.translate(z.x, z.y); g.rotate(z.ang || 0);
+  const lunge = z.atk ? Math.sin(t * 14 + z.phase) * 2.5 : 0;
+  g.fillStyle = "rgba(0,0,0,.35)"; g.beginPath(); g.ellipse(-2, 3, z.r * 1.05, z.r * .9, 0, 0, 7); g.fill();
+  const skin = z.hit > 0 ? "#ffffff" : null;
+  g.lineWidth = 1.5; g.strokeStyle = "#0d120c";
+  if (T === "comum") {
+    g.fillStyle = skin || "#7f9e5b";
+    g.save(); g.translate(lunge, 0);
+    g.beginPath(); g.rect(3, -8 + wob * .5, 13, 3.6); g.fill(); g.stroke();
+    g.beginPath(); g.rect(3, 4.4 - wob * .5, 12, 3.6); g.fill(); g.stroke();
+    g.restore();
+    g.fillStyle = skin || "#4d5d33"; g.beginPath();
+    g.moveTo(-7, -8); g.lineTo(5, -9); g.lineTo(7, 0); g.lineTo(5, 9); g.lineTo(-3, 8); g.lineTo(-6, 10); g.lineTo(-8, 3); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = skin || "#8fae6a"; g.beginPath(); g.ellipse(3 + lunge * .5, 0, 5.5, 5, 0, 0, 7); g.fill(); g.stroke();
+    g.fillStyle = "#ff3b2a"; g.fillRect(6 + lunge * .5, -2.6, 1.8, 1.8); g.fillRect(6 + lunge * .5, 1, 1.8, 1.8);
+  } else if (T === "corredor") {
+    g.fillStyle = "rgba(200,220,180,.25)";
+    for (let i = 0; i < 3; i++) g.fillRect(-18 - i * 5, -4 + i * 3, 8, 1.5);
+    g.fillStyle = skin || "#a9c08a";
+    g.save(); g.rotate(wob * .06);
+    g.beginPath(); g.moveTo(-1, -5); g.lineTo(-12, -9); g.lineTo(-12, -6); g.lineTo(-1, -2); g.closePath(); g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(-1, 5); g.lineTo(-12, 9); g.lineTo(-12, 6); g.lineTo(-1, 2); g.closePath(); g.fill(); g.stroke();
+    g.restore();
+    g.fillStyle = skin || "#35576b";
+    g.beginPath(); g.moveTo(-6, -5); g.lineTo(4, -4); g.lineTo(6, 0); g.lineTo(4, 4); g.lineTo(-6, 5); g.lineTo(-4, 0); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = skin || "#b8cf98"; g.beginPath(); g.moveTo(5, -4); g.lineTo(11, -2); g.lineTo(11, 2); g.lineTo(5, 4); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = "#ffe14a"; g.fillRect(9, -1.8, 1.6, 1.4); g.fillRect(9, .6, 1.6, 1.4);
+  } else if (T === "gordao") {
+    g.fillStyle = skin || "#6f7d45";
+    g.beginPath(); g.ellipse(6 + lunge, -13, 5, 3, .4, 0, 7); g.fill(); g.stroke();
+    g.beginPath(); g.ellipse(6 + lunge, 13, 5, 3, -.4, 0, 7); g.fill(); g.stroke();
+    g.fillStyle = skin || "#5f6b3a"; g.beginPath(); g.ellipse(0, 0, 12.5, 15 + wob * .3, 0, 0, 7); g.fill(); g.stroke();
+    g.fillStyle = skin || "#9aa86a"; g.beginPath(); g.ellipse(3, 0, 7, 9, 0, 0, 7); g.fill();
+    g.strokeStyle = "#4a3a24"; g.lineWidth = 1; for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(-2, i * 5 - 2); g.lineTo(6, i * 5 + 1); g.stroke(); }
+    g.strokeStyle = "#0d120c"; g.lineWidth = 1.5;
+    g.fillStyle = skin || "#86945a"; g.beginPath(); g.ellipse(11, 0, 4.5, 5, 0, 0, 7); g.fill(); g.stroke();
+    g.fillStyle = "#ff3b2a"; g.fillRect(13, -2.2, 1.6, 1.6); g.fillRect(13, .8, 1.6, 1.6);
+  } else if (T === "chefao") {
+    g.fillStyle = "rgba(255,60,30,.12)"; g.beginPath(); g.arc(0, 0, 32 + Math.sin(t * 4) * 2, 0, 7); g.fill();
+    g.fillStyle = skin || "#7b2f2a";
+    g.save(); g.translate(lunge * 1.5, 0);
+    for (const sy of [-1, 1]) {
+      g.beginPath(); g.moveTo(2, sy * 12); g.lineTo(22, sy * 15); g.lineTo(24, sy * 9); g.lineTo(4, sy * 6); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = "#e9dfc6"; for (let i = 0; i < 3; i++) { g.beginPath(); g.moveTo(23, sy * (9 + i * 2.5)); g.lineTo(30, sy * (8.5 + i * 3)); g.lineTo(23, sy * (10.5 + i * 2.5)); g.closePath(); g.fill(); }
+      g.fillStyle = skin || "#7b2f2a";
+    }
+    g.restore();
+    g.fillStyle = skin || "#5a1f1c"; g.beginPath();
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; g.lineTo(Math.cos(a) * 19, Math.sin(a) * 22); } g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = "#e9dfc6";
+    for (const sy of [-1, 1]) for (let i = 0; i < 3; i++) { const bx = -10 + i * 7; g.beginPath(); g.moveTo(bx - 3, sy * 18); g.lineTo(bx, sy * 29); g.lineTo(bx + 3, sy * 18); g.closePath(); g.fill(); g.stroke(); }
+    g.fillStyle = skin || "#8c3a30"; g.beginPath(); g.moveTo(8, -9); g.lineTo(20, -6); g.lineTo(22, 0); g.lineTo(20, 6); g.lineTo(8, 9); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = "#ffe14a"; g.shadowColor = "#ffb000"; g.shadowBlur = 8; g.fillRect(16, -4.5, 3, 2.5); g.fillRect(16, 2, 3, 2.5); g.shadowBlur = 0;
+  }
+  g.restore();
+  if ((T === "gordao" || T === "chefao") && z.hp < z.maxHp) {
+    const w = T === "chefao" ? 46 : 26, y = z.y - z.r - (T === "chefao" ? 16 : 9);
+    g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(z.x - w / 2 - 1, y - 1, w + 2, 6);
+    g.fillStyle = T === "chefao" ? "#ff5a3a" : "#c9d36a"; g.fillRect(z.x - w / 2, y, w * Math.max(0, z.hp / z.maxHp), 4);
+  }
+}
+
+function drawSurvivor(g, x, y, aim, color, muzzle, sc) {
+  g.save(); g.translate(x, y); g.rotate(aim); g.scale(sc, sc);
+  g.fillStyle = "rgba(0,0,0,.4)"; g.beginPath(); g.ellipse(-2, 3, 13, 11, 0, 0, 7); g.fill();
+  g.lineWidth = 1.5; g.strokeStyle = "#0b0d0a";
+  g.fillStyle = "#6b4a2a"; rrect(g, -13, -7, 8, 14, 2); g.fill(); g.stroke();
+  g.fillStyle = "#2b2f33"; g.fillRect(4, -2, 18, 4); g.strokeRect(4, -2, 18, 4);
+  g.fillStyle = "#c8945e"; g.beginPath(); g.ellipse(9, 3, 3, 2.6, 0, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = color; g.beginPath();
+  g.moveTo(-7, -11); g.lineTo(4, -10); g.lineTo(7, -4); g.lineTo(7, 4); g.lineTo(4, 10); g.lineTo(-7, 11); g.lineTo(-9, 0); g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = "#c8945e"; g.beginPath(); g.ellipse(1, 0, 5.5, 5.5, 0, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = "#2f3b2a"; g.beginPath(); g.moveTo(-4, -5.5); g.lineTo(3, -5.5); g.lineTo(9, 0); g.lineTo(3, 5.5); g.lineTo(-4, 5.5); g.closePath(); g.fill(); g.stroke();
+  if (muzzle > 0) { g.fillStyle = "#ffe08a"; g.beginPath(); g.moveTo(22, 0); g.lineTo(32, -5); g.lineTo(29, 0); g.lineTo(32, 5); g.closePath(); g.fill(); }
+  g.restore();
+}
+function drawTurret(g, aim, muzzle) {
+  g.save(); g.translate(CX, CY);
+  g.fillStyle = "#4a4436"; g.strokeStyle = "#1c1a14"; g.lineWidth = 1.5;
+  g.beginPath(); for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283 + .39; g.lineTo(Math.cos(a) * 11, Math.sin(a) * 11); } g.closePath(); g.fill(); g.stroke();
+  g.rotate(aim);
+  g.fillStyle = "#2b2f33"; g.fillRect(0, -2.5, 17, 5); g.strokeRect(0, -2.5, 17, 5);
+  g.fillStyle = "#6c7680"; rrect(g, -6, -5, 11, 10, 2); g.fill(); g.stroke();
+  if (muzzle > 0) { g.fillStyle = "#ffe08a"; g.beginPath(); g.moveTo(17, 0); g.lineTo(25, -4); g.lineTo(23, 0); g.lineTo(25, 4); g.closePath(); g.fill(); }
+  g.restore();
+}
+function drawBarricade(g, hpFrac) {
+  const R = C("barricadeR"), n = 28;
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2;
+    const intact = (i * 11 % n) / n < hpFrac + .04;
+    g.save(); g.translate(CX + Math.cos(a) * R, CY + Math.sin(a) * R); g.rotate(a + Math.PI / 2);
+    g.fillStyle = intact ? (i % 2 ? "#a58e60" : "#9a8355") : "rgba(110,95,65,.3)";
+    g.strokeStyle = "#3a3020"; g.lineWidth = 1.3;
+    rrect(g, -10, -5, 20, 10, 4); g.fill();
+    if (intact) { g.stroke(); g.beginPath(); g.moveTo(-5, 0); g.lineTo(5, 0); g.strokeStyle = "#6e5d3c"; g.stroke(); }
+    g.restore();
+  }
+}
+function txt(g, s, x, y, size, col, align, weight) {
+  g.font = (weight || 800) + " " + size + "px system-ui, -apple-system, sans-serif";
+  g.textAlign = align || "center"; g.textBaseline = "middle";
+  g.lineWidth = Math.max(3, size / 5); g.strokeStyle = "rgba(0,0,0,.85)"; g.lineJoin = "round";
+  g.strokeText(s, x, y); g.fillStyle = col; g.fillText(s, x, y);
+}
+function fitText(g, s, max, size, weight) { const w = weight || 800; g.font = w + " " + size + "px system-ui, sans-serif"; while (g.measureText(s).width > max && size > 14) { size--; g.font = w + " " + size + "px system-ui, sans-serif"; } return size; }
+function clip(g, s, max, size) { g.font = "800 " + size + "px system-ui, sans-serif"; if (g.measureText(s).width <= max) return s; while (s.length > 2 && g.measureText(s + "…").width > max) s = s.slice(0, -1); return s + "…"; }
+function fmtTime(sec) { sec = Math.floor(sec); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); }
+let placed = [];
+function tag(g, s, x, y, col, bg, avoid) {
+  g.font = "800 14px system-ui, sans-serif"; const w = g.measureText(s).width + 12;
+  const bx = Math.min(W - 4 - w, Math.max(4, x - w / 2));
+  if (avoid) { // empilha etiquetas pra não ficarem uma em cima da outra
+    let tries = 0;
+    while (tries++ < 12 && placed.some(r => bx < r.x + r.w && bx + w > r.x && y - 10 < r.y + 21 && y + 11 > r.y)) y -= 22;
+    placed.push({ x: bx, y: y - 10, w });
+  }
+  g.fillStyle = bg || "rgba(0,0,0,.72)"; rrect(g, bx, y - 10, w, 20, 6); g.fill();
+  g.fillStyle = col; g.textAlign = "left"; g.textBaseline = "middle"; g.fillText(s, bx + 6, y + 1);
+}
+
+function topKillers(n) { return [...people.values()].filter(p => p.kills > 0).sort((a, b) => b.kills - a.kills).slice(0, n); }
+
+function drawHUD(g, s) {
+  g.fillStyle = "rgba(0,0,0,.58)"; rrect(g, 8, 8, 214, 44, 8); g.fill();
+  txt(g, "BASE", 16, 21, 14, "#e9e4d4", "left", 800);
+  g.fillStyle = "#2a1414"; g.fillRect(60, 15, 154, 12);
+  const f = Math.max(0, s.hp / C("baseHp"));
+  g.fillStyle = f > .5 ? "#5fd06b" : f > .25 ? "#e5b73b" : "#e5483b"; g.fillRect(60, 15, 154 * f, 12);
+  const l = field.length + " na base · " + s.kills + " abates";
+  txt(g, l, 16, 41, fitText(g, l, 200, 14), "#cfd8c8", "left", 700);
+  g.fillStyle = "rgba(0,0,0,.58)"; rrect(g, 228, 8, 124, 44, 8); g.fill();
+  txt(g, "ONDA " + s.wave, 290, 22, 18, "#ffcf7a", "center", 900);
+  txt(g, fmtTime(s.t) + " · rec " + fmtTime(Math.max(record, s.t)), 290, 41, 14, "#b8c4b0", "center", 700);
+  // top abates
+  const top = topKillers(3);
+  g.fillStyle = "rgba(0,0,0,.58)"; rrect(g, 8, 58, 344, 24, 8); g.fill();
+  const line = top.length ? "TOP: " + top.map((p, i) => (i + 1) + ". @" + p.name + " " + p.kills).join("   ") : "TOP: ninguém abateu ainda. Comente!";
+  txt(g, clip(g, line, 330, 14), 16, 70, 14, "#ffe7a0", "left", 800);
+  // feed de entradas
+  let y = 96;
+  for (const f of feed) { g.globalAlpha = Math.min(1, f.t * 2); tag(g, f.txt, 10 + 0, y, f.col); g.globalAlpha = 1; y += 22; }
+  // legenda
+  g.fillStyle = "rgba(0,0,0,.65)"; rrect(g, 8, H - 58, 344, 50, 8); g.fill();
+  txt(g, "COMENTE = SEU SOBREVIVENTE ATIRA", CX, H - 42, 15, "#bfe39a", "center", 900);
+  txt(g, "PRESENTE = BOMBA NA HORDA", CX, H - 21, 15, "#ffc07a", "center", 900);
+}
+function drawBanners(g, s) {
+  let y = 196;
+  for (const b of s.banners.slice().reverse()) {
+    const life = b.wave ? 2.4 : 2.6;
+    g.globalAlpha = Math.max(0, Math.min(1, b.t * 3, (life - b.t) * 6 + .2));
+    const h = 52, slide = (1 - Math.min(1, (life - b.t) * 5)) * 40;
+    g.fillStyle = b.wave ? "rgba(90,30,20,.92)" : "rgba(120,60,10,.92)";
+    rrect(g, 14 + slide, y, 332, h, 10); g.fill();
+    g.strokeStyle = b.wave ? "#ff8c5a" : "#ffc35a"; g.lineWidth = 2; g.stroke();
+    txt(g, b.txt, CX + slide, y + 18, fitText(g, b.txt, 300, 22, 900), "#ffffff", "center", 900);
+    txt(g, b.sub, CX + slide, y + 38, fitText(g, b.sub, 310, 14), "#ffe9c8", "center", 800);
+    g.globalAlpha = 1; y += h + 6;
+  }
+}
+function overlay(g, a) { g.fillStyle = "rgba(5,8,6," + a + ")"; g.fillRect(0, 0, W, H); }
+function drawTitle(g, t) {
+  overlay(g, .74);
+  txt(g, "HORDA", CX, 112, 54, "#9fd35a", "center", 900);
+  txt(g, "AO VIVO", CX, 160, 40, "#ff9a3c", "center", 900);
+  const lines = [
+    ["Quem entra na live vira um sobrevivente.", "#e9e4d4"],
+    ["Cada comentário = um tiro que mata um zumbi.", "#bfe39a"],
+    ["Cada presente = bomba na horda.", "#ffc07a"],
+    ["Se os zumbis derrubarem a base, acabou.", "#cfd8c8"],
+    ["Ranking de quem mais abate no final!", "#ffe7a0"],
+  ];
+  lines.forEach((l, i) => txt(g, l[0], CX, 214 + i * 28, fitText(g, l[0], 336, 15, 700), l[1], "center", 700));
+  const p = .75 + Math.sin(t * 4) * .25;
+  g.globalAlpha = p; txt(g, "TOQUE AQUI PARA COMEÇAR", CX, 384, 19, "#ffd38a", "center", 900); g.globalAlpha = 1;
+  txt(g, field.length + " sobreviventes na base", CX, 414, 14, "#b8c4b0", "center", 700);
+  if (record > 0) txt(g, "Recorde: " + fmtTime(record), CX, 436, 14, "#b8c4b0", "center", 700);
+}
+function drawOver(g, s) {
+  overlay(g, .8);
+  txt(g, "A BASE CAIU", CX, 80, 30, "#ff6a4a", "center", 900);
+  txt(g, "Aguentaram " + fmtTime(s.t) + " · onda " + s.wave, CX, 118, 20, "#fff4d6", "center", 900);
+  txt(g, s.newRecord ? "NOVO RECORDE!" : "Recorde: " + fmtTime(record), CX, 146, 15, s.newRecord ? "#ffd84a" : "#b8c4b0", "center", 900);
+  g.fillStyle = "rgba(40,60,30,.85)"; rrect(g, 20, 166, 320, 170, 10); g.fill();
+  txt(g, "QUEM MAIS ABATEU", CX, 184, 15, "#e8ffd2", "center", 900);
+  const top = topKillers(5);
+  if (!top.length) txt(g, "ninguém comentou", CX, 250, 15, "#cfd8c8", "center", 700);
+  top.forEach((p, i) => { const l = (i + 1) + ". @" + p.name + "  " + p.kills + " abates"; txt(g, l, CX, 212 + i * 25, fitText(g, l, 300, i === 0 ? 19 : 16), i === 0 ? "#ffe08a" : "#ffffff", "center", 800); });
+  const gifters = [...people.values()].filter(p => p.bombs > 0).sort((a, b) => b.bombs - a.bombs).slice(0, 3);
+  g.fillStyle = "rgba(90,50,15,.85)"; rrect(g, 20, 346, 320, 92, 10); g.fill();
+  txt(g, "QUEM MAIS MANDOU BOMBA", CX, 364, 15, "#ffe0b8", "center", 900);
+  if (!gifters.length) txt(g, "nenhum presente nessa partida", CX, 398, 14, "#e8d6c0", "center", 700);
+  gifters.forEach((p, i) => { const l = (i + 1) + ". @" + p.name + "  " + p.bombs; txt(g, l, CX, 388 + i * 20, fitText(g, l, 300, 15), "#fff", "center", 800); });
+  txt(g, "TOQUE PARA JOGAR DE NOVO", CX, 470, 18, "#ffd38a", "center", 900);
+}
+function drawFigures(g, t) {
+  g.fillStyle = "#1a2219"; g.fillRect(0, 0, W, H);
+  txt(g, "FIGURAS", CX, 30, 22, "#fff", "center", 900);
+  const list = [["comum", 70, 120], ["corredor", 180, 120], ["gordao", 290, 120], ["chefao", 90, 270]];
+  for (const [type, x, y] of list) {
+    const T = ZTYPES[type];
+    drawZombie(g, { type, x, y, r: T.r, hp: 1, maxHp: 1, phase: t * 2, ang: 0, hit: 0 }, t);
+    txt(g, T.name, x, y + 46, 15, "#e9e4d4", "center", 800);
+  }
+  drawSurvivor(g, 200, 270, 0, JACKETS[0], 0, 1); drawSurvivor(g, 260, 270, 0, JACKETS[1], 0, 1); drawSurvivor(g, 320, 270, 0, JACKETS[3], 0, 1);
+  txt(g, "Sobreviventes", 260, 316, 15, "#e9e4d4", "center", 800);
+  g.save(); g.translate(0, 140); drawBarricade(g, .7); drawTurret(g, -.5, 0); g.restore();
+  txt(g, "Base + torre", CX, 545, 15, "#e9e4d4", "center", 800);
+}
+function render(now) {
+  const t = now / 1000, s = state;
+  ctx.setTransform(DPR * scaleCss, 0, 0, DPR * scaleCss, 0, 0);
+  if (scene === "figures") { drawFigures(ctx, t); return; }
+  ctx.save();
+  if (s.shake > 0) ctx.translate(rr(-4, 4) * s.shake * 2, rr(-4, 4) * s.shake * 2);
+  ctx.drawImage(ground, 0, 0, W, H);
+  for (const c of s.corpses) { ctx.globalAlpha = Math.min(1, c.t / 2) * .7; ctx.fillStyle = "#3a120c"; ctx.beginPath(); ctx.ellipse(c.x, c.y, c.r * 1.2, c.r * .8, c.x, 0, 7); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  drawBarricade(ctx, s.hp / C("baseHp"));
+  drawTurret(ctx, s.turretAim, s.turretMuzzle);
+  for (const p of field) { const [x, y] = SLOTS[p.slot]; drawSurvivor(ctx, x, y, p.aim, p.color, p.muzzle, .8 + (p.joinT > 0 ? Math.sin(p.joinT * 10) * .15 : 0)); }
+  for (const z of s.zombies) drawZombie(ctx, z, t);
+  ctx.strokeStyle = "#ffe7a0"; ctx.lineWidth = 2;
+  for (const b of s.bullets) { if (b.px === undefined) continue; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - (b.x - b.px) * 2.5, b.y - (b.y - b.py) * 2.5); ctx.stroke(); }
+  for (const bm of s.bombs) {
+    const k = bm.t / bm.dur, x = bm.x0 + (bm.x1 - bm.x0) * k, y = bm.y0 + (bm.y1 - bm.y0) * k, h = Math.sin(k * Math.PI) * 50;
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.ellipse(x, y, 5, 3, 0, 0, 7); ctx.fill();
+    ctx.save(); ctx.translate(x, y - h); ctx.rotate(bm.t * 12);
+    ctx.fillStyle = "#3b4a2a"; ctx.strokeStyle = "#111"; ctx.lineWidth = 1.2; rrect(ctx, -5, -6, 10, 12, 4); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#888"; ctx.fillRect(-2, -9, 4, 3); ctx.fillStyle = "#ffb347"; ctx.fillRect(1, -11, 2, 2);
+    ctx.restore();
+  }
+  for (const p of s.parts) { ctx.globalAlpha = Math.min(1, p.t * 3); ctx.fillStyle = p.col; ctx.fillRect(p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz); }
+  ctx.globalAlpha = 1;
+  for (const r of s.rings) { ctx.globalAlpha = r.t * 2; ctx.strokeStyle = "#ffb347"; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, 7); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  // nomes: só de quem está ativo (comentou/entrou agora) pra não poluir
+  placed = [];
+  const talk = field.filter(p => p.bubble || p.joinT > 0 || p.pending > 0 || p.bombQ > 0).sort((a, b) => SLOTS[b.slot][1] - SLOTS[a.slot][1]);
+  for (const p of talk) {
+    const [x, y] = SLOTS[p.slot];
+    if (p.bubble) { ctx.globalAlpha = Math.min(1, p.bubble.t * 3); tag(ctx, "@" + p.name + ": " + p.bubble.text, x, y - 22, "#ffffff", "rgba(30,60,30,.88)", true); ctx.globalAlpha = 1; }
+    else tag(ctx, "@" + p.name, x, y - 20, "#ffe7a0", null, true);
+  }
+  if (s.flash > 0) { ctx.fillStyle = "rgba(255,220,160," + s.flash + ")"; ctx.fillRect(0, 0, W, H); }
+  if (scene === "play" && s.hp / C("baseHp") < .3) { ctx.strokeStyle = "rgba(255,40,30," + (.3 + Math.sin(t * 8) * .2) + ")"; ctx.lineWidth = 10; ctx.strokeRect(0, 0, W, H); }
+  for (const f of s.floats) { ctx.globalAlpha = Math.min(1, f.t * 2); txt(ctx, f.txt, f.x < 100 ? 100 : f.x > 260 ? 260 : f.x, f.y, fitText(ctx, f.txt, 330, 16, 900), f.col, "center", 900); }
+  ctx.globalAlpha = 1;
+  drawHUD(ctx, s);
+  if (scene === "play" || scene === "paused") drawBanners(ctx, s);
+  if (scene === "title") drawTitle(ctx, t);
+  if (scene === "paused") { overlay(ctx, .6); txt(ctx, "PAUSADO", CX, H / 2 - 10, 34, "#fff", "center", 900); txt(ctx, "toque para continuar", CX, H / 2 + 26, 15, "#cfd8c8", "center", 700); }
+  if (scene === "over") drawOver(ctx, s);
+}
+
+// ================= PAINEL =================
+const nameInput = document.getElementById("name");
+let lastChip = null;
+function renderChips() {
+  const box = document.getElementById("chips"); if (!box) return;
+  box.innerHTML = "";
+  const list = field.slice().sort((a, b) => a.name.localeCompare(b.name));
+  for (const p of list) {
+    const b = document.createElement("button"); b.className = "chip" + (lastChip === p.key ? " sel" : ""); b.textContent = "@" + p.name;
+    b.style.borderColor = lastChip === p.key ? "#d98b2b" : p.color;
+    b.onclick = () => { ensureAudio(); if (scene === "paused") scene = "play"; lastChip = p.key; onChat(p.key, p.name, ""); renderChips(); };
+    box.appendChild(b);
+  }
+}
+document.getElementById("joinBtn").onclick = () => {
+  ensureAudio(); const n = nameInput.value.trim(); if (!n) { nameInput.focus(); return; }
+  onJoin(n, n); lastChip = keyOf(n); nameInput.value = ""; renderChips();
+};
+document.getElementById("giftBtn").onclick = () => {
+  ensureAudio(); const n = nameInput.value.trim();
+  const p = n ? getPerson(n, n) : (lastChip && people.get(lastChip));
+  if (!p) { document.getElementById("hint").textContent = "Digite o @ ou toque num nome antes de apertar Presente."; return; }
+  if (scene === "paused") scene = "play";
+  onGift(p.key, p.name, "presente", 1); lastChip = p.key; nameInput.value = ""; renderChips();
+};
+nameInput.addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("joinBtn").click(); });
+document.getElementById("pauseBtn").onclick = () => { ensureAudio(); togglePause(); };
+const muteBtn = document.getElementById("muteBtn");
+function updMute() { muteBtn.textContent = muted ? "Mudo" : "Som"; muteBtn.style.opacity = muted ? .55 : 1; }
+muteBtn.onclick = () => { ensureAudio(); muted = !muted; try { localStorage.setItem("hordaAoVivo.mudo", muted ? "1" : "0"); } catch (e) {} updMute(); };
+updMute();
+const panel = document.getElementById("panel"), showBtn = document.getElementById("showBtn");
+document.getElementById("hideBtn").onclick = () => { panel.classList.add("hidden"); showBtn.classList.add("vis"); resize(); };
+showBtn.onclick = () => { panel.classList.remove("hidden"); showBtn.classList.remove("vis"); resize(); };
+function togglePause() { if (scene === "play") scene = "paused"; else if (scene === "paused") scene = "play"; }
+cv.addEventListener("click", () => { ensureAudio(); if (scene === "title" || scene === "over") startGame(); else if (scene === "paused") scene = "play"; });
+const FAKE = ["ana_gamer", "joaozinho", "pedro.zk", "lu_fps", "biazinha", "rafa", "matheus77", "carol", "nando", "duda.br"];
+window.addEventListener("keydown", e => {
+  if (document.activeElement && document.activeElement.tagName === "INPUT") return;
+  const k = e.key.toLowerCase();
+  if (k === " " || k === "p" || k === "escape") { if (scene === "title" || scene === "over") startGame(); else togglePause(); e.preventDefault(); }
+  else if (k === "enter" && (scene === "title" || scene === "over")) startGame();
+  else if (k === "j") onJoin(FAKE[Math.floor(rnd() * FAKE.length)]);
+  else if (k === "t") { const u = FAKE[Math.floor(rnd() * FAKE.length)]; onChat(u, u, "bora!"); }
+  else if (k === "g") { const u = FAKE[Math.floor(rnd() * FAKE.length)]; onGift(u, u, "Rosa", 3); }
+});
+
+// ================= CONEXÃO COM A LIVE (Euler Stream, direto do celular) =================
+const statusEl = document.getElementById("status");
+const hintEl = document.getElementById("hint");
+function setStatus(ev) {
+  statusEl.className = "pill" + (ev.state === "connected" ? " on" : ev.state === "error" ? " err" : "");
+  statusEl.textContent = ev.text || (ev.state === "connected" ? "Conectado na live" : "Conectando...");
+}
+const cfg = { user: "", key: "" };
+try { cfg.user = localStorage.getItem("hordaAoVivo.user") || ""; cfg.key = localStorage.getItem("hordaAoVivo.key") || ""; } catch (e) {}
+let ws = null, wsWanted = false, retryT = null, retryDelay = 3000;
+// códigos que o servidor manda quando fecha a conexão
+const CLOSE_MSG = {
+  4401: "Chave da Euler errada. Toque em Live e confira.",
+  4403: "A chave não tem permissão. Toque em Live e confira.",
+  4400: "O @ da conta está errado. Toque em Live e confira.",
+  4429: "Muitas conexões abertas. Espere 1 minuto.",
+  4005: "A live terminou.",
+  4555: "Passou de 8 horas. Toque em Live > Conectar.",
+};
+const STOP_CODES = new Set([4400, 4401, 4403, 4005, 4555]);
+const streaks = new Map();
+function userOf(d) {
+  const u = (d && (d.user || d.operator)) || {};
+  return { id: u.uniqueId || u.unique_id || u.displayId || u.display_id || "", nick: u.nickname || u.nickName || "" };
+}
+function onEulerMsg(m) {
+  const type = String(m.type || ""), d = m.data || {};
+  if (type === "WebcastChatMessage") {
+    const u = userOf(d); if (u.id) handleEvent({ type: "chat", user: u.id, nick: u.nick, text: d.comment || d.content || "" });
+  } else if (type === "WebcastMemberMessage" || type === "SyntheticJoinMessage") {
+    const u = userOf(d); if (u.id) handleEvent({ type: "join", user: u.id, nick: u.nick });
+  } else if (type === "WebcastGiftMessage") {
+    const u = userOf(d); if (!u.id) return;
+    const det = d.giftDetails || d.gift || {};
+    const name = det.giftName || det.name || "presente";
+    const rep = Math.max(1, +d.repeatCount || +d.comboCount || 1);
+    const streakable = +det.giftType === 1 || det.combo === true;
+    let n;
+    if (streakable) { // presente em sequência (rosa x5): manda as bombas conforme a sequência cresce
+      const k = u.id + "|" + (d.giftId || name) + "|" + (d.groupId || "");
+      const prev = streaks.get(k) || 0; n = rep - prev;
+      if (d.repeatEnd) streaks.delete(k); else streaks.set(k, Math.max(prev, rep));
+      if (streaks.size > 300) streaks.clear();
+    } else n = rep;
+    if (n > 0) handleEvent({ type: "gift", user: u.id, nick: u.nick, gift: name, count: n });
+  } else if (type === "roomInfo") {
+    setStatus({ state: "connected", text: "Conectado na live de @" + cfg.user });
+  }
+}
+function connectLive() {
+  clearTimeout(retryT);
+  if (ws) { try { ws.onclose = null; ws.close(); } catch (e) {} ws = null; }
+  if (!cfg.user || !cfg.key) { wsWanted = false; setStatus({ state: "", text: "Modo manual" }); return; }
+  wsWanted = true;
+  const url = "wss://ws.eulerstream.com?uniqueId=" + encodeURIComponent(cfg.user) + "&apiKey=" + encodeURIComponent(cfg.key);
+  setStatus({ state: "connecting", text: "Conectando na live de @" + cfg.user + "..." });
+  hintEl.textContent = "Ligado na live: tudo é automático. Os botões abaixo servem só pra teste.";
+  try { ws = new WebSocket(url); } catch (e) { scheduleRetry("Sem internet?", 5000); return; }
+  ws.onopen = () => { retryDelay = 3000; setStatus({ state: "connected", text: "Conectado: @" + cfg.user }); };
+  ws.onmessage = ev => {
+    let j; try { j = JSON.parse(ev.data); } catch (e) { return; }
+    const list = Array.isArray(j.messages) ? j.messages : (j.type ? [j] : []);
+    for (const m of list) { try { onEulerMsg(m); } catch (e) {} }
+  };
+  ws.onclose = ev => {
+    ws = null; if (!wsWanted) return;
+    if (ev.code === 4404) { scheduleRetry("Esperando a live de @" + cfg.user + " começar...", 15000); return; }
+    if (STOP_CODES.has(ev.code)) { wsWanted = false; setStatus({ state: "error", text: CLOSE_MSG[ev.code] }); return; }
+    scheduleRetry((CLOSE_MSG[ev.code] || "A conexão caiu.") + " Tentando de novo...");
+  };
+}
+function scheduleRetry(why, delay) {
+  setStatus({ state: "error", text: why });
+  retryT = setTimeout(connectLive, delay || retryDelay);
+  if (!delay) retryDelay = Math.min(30000, retryDelay * 2);
+}
+
+// Teste sem live: pessoas falsas entrando, comentando e mandando presente
+let simT = null;
+function simulate() {
+  clearInterval(simT); let i = 0;
+  if (scene === "title" || scene === "over") startGame();
+  setStatus({ state: "connected", text: "Teste: pessoas falsas na live" });
+  simT = setInterval(() => {
+    const u = FAKE[Math.floor(rnd() * FAKE.length)], user = { uniqueId: u, nickname: u }, r = rnd();
+    if (r < .12) onEulerMsg({ type: "WebcastMemberMessage", data: { user } });
+    else if (r < .92) onEulerMsg({ type: "WebcastChatMessage", data: { user, comment: ["bora!", "atira!", "kkkk", "vai vai", "salva a base"][i % 5] } });
+    else onEulerMsg({ type: "WebcastGiftMessage", data: { user, giftId: 5655, groupId: "t" + i, repeatCount: 3, repeatEnd: 1, giftDetails: { giftName: "Rosa", giftType: 1 } } });
+    if (++i > 150) { clearInterval(simT); setStatus({ state: "", text: cfg.user ? "Teste acabou. Toque em Live > Conectar." : "Teste acabou" }); }
+  }, 350);
+}
+
+// tela de ligar na live
+const setupEl = document.getElementById("setup"), cfgUser = document.getElementById("cfgUser"), cfgKey = document.getElementById("cfgKey");
+function openSetup() { cfgUser.value = cfg.user; cfgKey.value = cfg.key; setupEl.classList.remove("hidden"); }
+function closeSetup() { setupEl.classList.add("hidden"); }
+document.getElementById("liveBtn").onclick = () => { ensureAudio(); openSetup(); };
+document.getElementById("cfgClose").onclick = closeSetup;
+document.getElementById("cfgSave").onclick = () => {
+  ensureAudio();
+  const user = cfgUser.value.trim().replace(/^@/, "").replace(/^.*tiktok\.com\/@?/i, "").replace(/\/.*$/, "");
+  const key = cfgKey.value.trim();
+  if (!user) { cfgUser.focus(); return; }
+  if (!key) { cfgKey.focus(); return; }
+  cfg.user = user; cfg.key = key;
+  try { localStorage.setItem("hordaAoVivo.user", user); localStorage.setItem("hordaAoVivo.key", key); } catch (e) {}
+  clearInterval(simT); closeSetup(); connectLive();
+};
+document.getElementById("cfgTest").onclick = () => { ensureAudio(); closeSetup(); simulate(); };
+
+// ================= LOOP =================
+let last = performance.now(), acc = 0;
+function frame(now) {
+  acc += Math.min(.25, (now - last) / 1000); last = now;
+  while (acc >= DT) { update(DT); acc -= DT; }
+  render(now);
+  requestAnimationFrame(frame);
+}
+buildGround(); resize(); renderChips();
+if (cfg.user && cfg.key) connectLive(); else if (scene !== "figures") openSetup();
+requestAnimationFrame(frame);
+
+window.game = {
+  get scene() { return scene; }, get state() { return state; }, get field() { return field; }, people, CONFIG,
+  press(k) { if (k === "enter" || k === " ") { if (scene !== "play") startGame(); return; } window.dispatchEvent(new KeyboardEvent("keydown", { key: k })); },
+  step(n) { for (let i = 0; i < (n || 1); i++) update(DT); },
+  event: handleEvent, start: startGame, euler: onEulerMsg, simulate,
+};
+</script>
+</body>
+</html>
